@@ -148,8 +148,12 @@ def test(args, io):
         data = data.permute(0, 2, 1)
         logits = model(data)
         preds = logits.max(dim=1)[1] 
-        test_true.append(label.cpu().numpy())
-        test_pred.append(preds.detach().cpu().numpy())
+        if args.test_batch_size == 1:
+            test_true.append([label.cpu().numpy()])
+            test_pred.append([preds.detach().cpu().numpy()])
+        else:
+            test_true.append(label.cpu().numpy())
+            test_pred.append(preds.detach().cpu().numpy())
 
     test_true = np.concatenate(test_true)
     test_pred = np.concatenate(test_pred)
