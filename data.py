@@ -12,7 +12,7 @@ def download():
     if not os.path.exists(os.path.join(DATA_DIR, 'modelnet40_ply_hdf5_2048')):
         www = 'https://shapenet.cs.stanford.edu/media/modelnet40_ply_hdf5_2048.zip'
         zipfile = os.path.basename(www)
-        os.system('wget %s; unzip %s' % (www, zipfile))
+        os.system('wget --no-check-certificate %s; unzip %s' % (www, zipfile))
         os.system('mv %s %s' % (zipfile[:-4], DATA_DIR))
         os.system('rm %s' % (zipfile))
 
@@ -24,13 +24,47 @@ def load_data(partition):
     all_label = []
     for h5_name in glob.glob(os.path.join(DATA_DIR, 'modelnet40_ply_hdf5_2048', 'ply_data_%s*.h5'%partition)):
         f = h5py.File(h5_name)
-        data = f['data'][:].astype('float32')
-        label = f['label'][:].astype('int64')
+        data = f['data'][:].astype('float32') # shape: (#_of_items, #_of_points, xyz_point values)
+        label = f['label'][:].astype('int64') # shape: (#_of_itmes, 1) since only one label
         f.close()
         all_data.append(data)
         all_label.append(label)
-    all_data = np.concatenate(all_data, axis=0)
-    all_label = np.concatenate(all_label, axis=0)
+   # Train shape (5, 2048, 2048, 3)
+   # Test shape ( 2, 2048, 2048, 3)
+
+    all_data = np.concatenate(all_data, axis=0) #1024, 3
+    all_label = np.concatenate(all_label, axis=0) # 1024, 3
+    return all_data, all_label
+
+def load_data_pre_train(partition):
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_DIR = os.path.join(BASE_DIR, 'data')
+    print('Loading Permuted data...')
+    glob_path = glob.glob(os.path.join(DATA_DIR, 'ShapeNet_Perm', '%s_data'%partition, '*','*.pts'))
+    all_data = np.empty((len(glob_path),2024, 3), dtype = 'float64')
+    all_label = np.empty((len(glob_path),2024), dtype = 'int64')
+    for index, class_folder in enumerate(glob.glob(os.path.join(DATA_DIR, 'ShapeNet_Perm', '%s_data'%partition, '*','*.pts'))):
+        point_name = os.path.basename(os.path.normpath(class_folder))
+        point_base = point_name.split('.')[0]
+        label_file = os.path.join(os.path.dirname(class_folder), '%s_label.txt'%point_base)
+
+        data = np.loadtxt(class_folder, dtype= 'float64')
+        label = np.loadtxt(label_file, dtype = 'int64')
+        data_len = data.shape[0]
+        if data_len < 2048:
+            continue
+        rng = np.random.default_rng()
+        index_sampled = rng.choice(data_len, size = 2024, replace = False)
+        data = data[index_sampled,:]
+        label = label[index_sampled]
+        # shape: (number points, xyz)
+        if index % 1000 == 0:
+            print('% completed: {0}'.format(index/len(glob_path)))
+
+        all_data[index,:,:] = data
+        all_label[index,:] = label
+    print(all_data.shape)
+    print(all_label.shape)
     return all_data, all_label
 
 def random_point_dropout(pc, max_dropout_ratio=0.875):
@@ -75,10 +109,33 @@ class ModelNet40(Dataset):
     def __len__(self):
         return self.data.shape[0]
 
+class ShapeNetPerm(Dataset):
+    def __init__(self, num_points, partition='train'):
+        self.data, self.label = load_data_pre_train(partition)
+        self.num_points = num_points
+        self.partition = partition
+
+    def __getitem__(self, item):
+        pointcloud = self.data[item][:self.num_points]
+        label = self.label[item][:self.num_points]
+#        if self.partition == 'train':
+#            pointcloud = random_point_dropout(pointcloud)
+#            pointcloud = translate_pointcloud(pointcloud)
+#            np.random.shuffle(pointcloud)
+        return pointcloud, label
+    
+    def __len__(self):
+        return self.data.shape[0]
 
 if __name__ == '__main__':
-    train = ModelNet40(1024)
-    test = ModelNet40(1024, 'test')
+#    train = ModelNet40(1024)
+#    test = ModelNet40(1024, 'test')
+    train = ShapeNetPerm(2024)
+#    test = ShapeNetPerm(1024, 'test')
+
+    # Datashape for Modelnet40 Train: (1024,3) Test: (1,)
+    # Needed Datashape for pretrain task. Train (1024,3) Test(1024,)
     for data, label in train:
-        print(data.shape)
-        print(label.shape)
+        print(data.shape) #(# points, xyz) 
+        print(label.shape) # (1, ) if pretrain: (# points)
+        
