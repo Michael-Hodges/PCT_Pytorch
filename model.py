@@ -22,39 +22,115 @@ class Local_op(nn.Module):
         x = x.reshape(b, n, -1).permute(0, 2, 1)
         return x
 
-class Pct(nn.Module):
-    def __init__(self, args, output_channels=40):
-        super(Pct, self).__init__()
+class pct_semantic(nn.module):
+    def __init__(self, args, output_channels=27):
+        super(pct_semantic, self).__init__()
         self.args = args
-        self.conv1 = nn.Conv1d(3, 64, kernel_size=1, bias=False)
-        self.conv2 = nn.Conv1d(64, 64, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm1d(64)
-        self.bn2 = nn.BatchNorm1d(64)
-        self.gather_local_0 = Local_op(in_channels=128, out_channels=128)
-        self.gather_local_1 = Local_op(in_channels=256, out_channels=256)
+        self.conv1 = nn.conv1d(3, 64, kernel_size=1, bias=false)
+        self.conv2 = nn.conv1d(64, 64, kernel_size=1, bias=false)
+        self.bn1 = nn.batchnorm1d(64)
+        self.bn2 = nn.batchnorm1d(64)
+        self.gather_local_0 = local_op(in_channels=128, out_channels=128)
+        self.gather_local_1 = local_op(in_channels=256, out_channels=256)
 
-        self.pt_last = Point_Transformer_Last(args)
+        self.pt_last = point_transformer_last(args)
 
-        self.conv_fuse = nn.Sequential(nn.Conv1d(1280, 1024, kernel_size=1, bias=False),
-                                    nn.BatchNorm1d(1024),
-                                    nn.LeakyReLU(negative_slope=0.2))
+        self.conv_fuse = nn.sequential(nn.conv1d(1280, 1024, kernel_size=1, bias=false),
+                                    nn.batchnorm1d(1024),
+                                    nn.leakyrelu(negative_slope=0.2))
+
+        self.lbrd1 = nn.sequential(nn.conv1d(1024, 256, kernel_size=1, bias=false), 
+                                    nn.batchnorm1d(256),
+                                    nn.leakyrelu(negative_slope=0.2),
+                                    nn.dropout(p=0.5))
+        self.lbr1 = nn.sequential(nn.conv1d(256, 256, kernel_size=1, bias=false),
+                                    nn.batchnorm1d(256),
+                                    nn.leakyrelu(negative_slope=0.2))
+        self.linear_final = nn.Linear(256, output_channels, bias = false)
 
 
-        self.linear1 = nn.Linear(1024, 512, bias=False)
-        self.bn6 = nn.BatchNorm1d(512)
-        self.dp1 = nn.Dropout(p=args.dropout)
-        self.linear2 = nn.Linear(512, 256)
-        self.bn7 = nn.BatchNorm1d(256)
-        self.dp2 = nn.Dropout(p=args.dropout)
-        self.linear3 = nn.Linear(256, output_channels)
+#        self.linear1 = nn.linear(1024, 512, bias=false)
+#        self.bn6 = nn.batchnorm1d(512)
+#        self.dp1 = nn.dropout(p=args.dropout)
+#        self.linear2 = nn.linear(512, 256)
+#        self.bn7 = nn.batchnorm1d(256)
+#        self.dp2 = nn.dropout(p=args.dropout)
+#        self.linear3 = nn.linear(256, output_channels)
 
     def forward(self, x):
         xyz = x.permute(0, 2, 1)
         batch_size, _, _ = x.size()
-        # B, D, N
-        x = F.relu(self.bn1(self.conv1(x)))
-        # B, D, N
-        x = F.relu(self.bn2(self.conv2(x)))
+        # b, d, n
+        x = f.relu(self.bn1(self.conv1(x)))
+        # b, d, n
+        x = f.relu(self.bn2(self.conv2(x)))
+        x = x.permute(0, 2, 1)
+        new_xyz, new_feature = sample_and_group(npoint=512, radius=0.15, nsample=32, xyz=xyz, points=x)         
+        feature_0 = self.gather_local_0(new_feature)
+        feature = feature_0.permute(0, 2, 1)
+        new_xyz, new_feature = sample_and_group(npoint=256, radius=0.2, nsample=32, xyz=new_xyz, points=feature) 
+        feature_1 = self.gather_local_1(new_feature)
+
+        x = self.pt_last(feature_1)
+        x = torch.cat([x, feature_1], dim=1)
+        x = self.conv_fuse(x)   # Point Features 1024
+        print('point feature size: {0}'.format(x.size()))
+        point_feature = x
+        x = f.adaptive_max_pool1d(x, 1).view(batch_size, -1) # GLobal Features
+        print('global feature size: {0}'.format(x.size()))
+        global_feat = x.repeat(point_feature.size()[1])
+        # concat a repeat of global features and point features
+        x = torch.cat([global_feat, x], dim=2)
+        # conv 1D LBRD 256
+        x = self.lbrd1(x)
+        x = self.lbr1(x)
+        x = self.linear_final(x)
+        # conv 1D LBR 256
+        # conv 1D Linear Ns = 27 since k^3 is 27
+
+
+
+#        x = f.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
+#        x = self.dp1(x)
+#        x = f.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
+#        x = self.dp2(x)
+#        x = self.linear3(x)
+
+        return x
+
+class pct(nn.module):
+    def __init__(self, args, output_channels=40):
+        super(pct, self).__init__()
+        self.args = args
+        self.conv1 = nn.conv1d(3, 64, kernel_size=1, bias=false)
+        self.conv2 = nn.conv1d(64, 64, kernel_size=1, bias=false)
+        self.bn1 = nn.batchnorm1d(64)
+        self.bn2 = nn.batchnorm1d(64)
+        self.gather_local_0 = local_op(in_channels=128, out_channels=128)
+        self.gather_local_1 = local_op(in_channels=256, out_channels=256)
+
+        self.pt_last = point_transformer_last(args)
+
+        self.conv_fuse = nn.sequential(nn.conv1d(1280, 1024, kernel_size=1, bias=false),
+                                    nn.batchnorm1d(1024),
+                                    nn.leakyrelu(negative_slope=0.2))
+
+
+        self.linear1 = nn.linear(1024, 512, bias=false)
+        self.bn6 = nn.batchnorm1d(512)
+        self.dp1 = nn.dropout(p=args.dropout)
+        self.linear2 = nn.linear(512, 256)
+        self.bn7 = nn.batchnorm1d(256)
+        self.dp2 = nn.dropout(p=args.dropout)
+        self.linear3 = nn.linear(256, output_channels)
+
+    def forward(self, x):
+        xyz = x.permute(0, 2, 1)
+        batch_size, _, _ = x.size()
+        # b, d, n
+        x = f.relu(self.bn1(self.conv1(x)))
+        # b, d, n
+        x = f.relu(self.bn2(self.conv2(x)))
         x = x.permute(0, 2, 1)
         new_xyz, new_feature = sample_and_group(npoint=512, radius=0.15, nsample=32, xyz=xyz, points=x)         
         feature_0 = self.gather_local_0(new_feature)
@@ -65,10 +141,10 @@ class Pct(nn.Module):
         x = self.pt_last(feature_1)
         x = torch.cat([x, feature_1], dim=1)
         x = self.conv_fuse(x)
-        x = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)
-        x = F.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
+        x = f.adaptive_max_pool1d(x, 1).view(batch_size, -1)
+        x = f.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
         x = self.dp1(x)
-        x = F.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
+        x = f.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
         x = self.dp2(x)
         x = self.linear3(x)
 
@@ -138,3 +214,12 @@ class SA_Layer(nn.Module):
         x_r = self.act(self.after_norm(self.trans_conv(x - x_r)))
         x = x + x_r
         return x
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dropout', type=float, default=0.5,
+                        help='dropout rate')
+    args = parser.parse_args()
+    test_sem = pct_semantic(args)
+
+
