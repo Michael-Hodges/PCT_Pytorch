@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from util import sample_and_group 
+import argparse
 
 class Local_op(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -26,65 +27,72 @@ class pct_semantic(nn.Module):
     def __init__(self, args, output_channels=27):
         super(pct_semantic, self).__init__()
         self.args = args
-        self.conv1 = nn.Conv1d(3, 64, kernel_size=1, bias=False)
-        self.conv2 = nn.Conv1d(64, 64, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm1d(64)
-        self.bn2 = nn.BatchNorm1d(64)
+        self.conv1 = nn.Conv1d(3, 128, kernel_size=1, bias=False)
+        self.conv2 = nn.Conv1d(128, 256, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.bn2 = nn.BatchNorm1d(256)
         self.gather_local_0 = Local_op(in_channels=128, out_channels=128)
         self.gather_local_1 = Local_op(in_channels=256, out_channels=256)
 
-        self.pt_last = Point_Transformer_Last(args)
+        self.pt_last = Point_Transformer_Last(args,channels=256)
 
         self.conv_fuse = nn.Sequential(nn.Conv1d(1280, 1024, kernel_size=1, bias=False),
                                     nn.BatchNorm1d(1024),
                                     nn.LeakyReLU(negative_slope=0.2))
 
-        self.lbrd1 = nn.Sequential(nn.Conv1d(1024, 256, kernel_size=1, bias=False), 
+        self.lbrd1 = nn.Sequential(nn.Conv1d(2048, 256, kernel_size=1, bias=False), 
                                     nn.BatchNorm1d(256),
                                     nn.LeakyReLU(negative_slope=0.2),
                                     nn.Dropout(p=0.5))
         self.lbr1 = nn.Sequential(nn.Conv1d(256, 256, kernel_size=1, bias=False),
                                     nn.BatchNorm1d(256),
                                     nn.LeakyReLU(negative_slope=0.2))
-        self.linear_final = nn.Linear(256, output_channels, bias = False)
-
-
-#        self.Linear1 = nn.Linear(1024, 512, bias=False)
-#        self.bn6 = nn.BatchNorm1d(512)
-#        self.dp1 = nn.Dropout(p=args.dropout)
-#        self.Linear2 = nn.Linear(512, 256)
-#        self.bn7 = nn.BatchNorm1d(256)
-#        self.dp2 = nn.Dropout(p=args.dropout)
-#        self.linear3 = nn.Linear(256, output_channels)
+        self.linear_final = nn.Conv1d(256, output_channels,kernel_size=1, bias = False)
 
     def forward(self, x):
         xyz = x.permute(0, 2, 1)
         batch_size, _, _ = x.size()
         # b, d, n
+#        print('input shape: {0}'.format(x.size()))
         x = F.relu(self.bn1(self.conv1(x)))
+#        print('embedingshape1: {0}'.format(x.size()))
         # b, d, n
         x = F.relu(self.bn2(self.conv2(x)))
-        x = x.permute(0, 2, 1)
-        new_xyz, new_feature = sample_and_group(npoint=512, radius=0.15, nsample=32, xyz=xyz, points=x)         
-        feature_0 = self.gather_local_0(new_feature)
-        feature = feature_0.permute(0, 2, 1)
-        new_xyz, new_feature = sample_and_group(npoint=256, radius=0.2, nsample=32, xyz=new_xyz, points=feature) 
-        feature_1 = self.gather_local_1(new_feature)
-
-        x = self.pt_last(feature_1)
+#        print('embedingshape2: {0}'.format(x.size()))
+#        x = x.permute(0, 2, 1)
+#        new_xyz, new_feature = sample_and_group(npoint=512, radius=0.15, nsample=1, xyz=xyz, points=x)         
+#        feature_0 = self.gather_local_0(new_feature)
+#        print('feature0: {0}'.format(feature_0.size()))
+#        feature = feature_0.permute(0, 2, 1)
+#        new_xyz, new_feature = sample_and_group(npoint=256, radius=0.2, nsample=1, xyz=new_xyz, points=feature) 
+#        feature_1 = self.gather_local_1(new_feature) #replaced new_feature with feature_0 
+#        print('feature1: {0}'.format(feature_1.size()))
+        feature_1 = x
+        x = self.pt_last(x)
+#        print('ptlast1: {0}'.format(x.size()))
         x = torch.cat([x, feature_1], dim=1)
+#        print('post concat: {0}'.format(x.size()))
         x = self.conv_fuse(x)   # Point Features 1024
-        print('point feature size: {0}'.format(x.size()))
+#        print('point feature size: {0}'.format(x.size()))
         point_feature = x
         x = F.adaptive_max_pool1d(x, 1).view(batch_size, -1) # GLobal Features
-        print('global feature size: {0}'.format(x.size()))
-        global_feat = x.repeat(point_feature.size()[1])
+#        print('global feature size: {0}'.format(x.size()))
+        global_feat = torch.unsqueeze(x, 2)
+#        print('global feature unsqueeze: {0}'.format(global_feat.size()))
+        global_feat = global_feat.expand((-1,-1, point_feature.size()[2]))#x.repeat((point_feature.size()[0],point_feature.size()[1],256))
+
+#        print('global feat rep size: {0}'.format(global_feat.size()))
+#        print('point feat size:{0}'.format(x.size()))
         # concat a repeat of global features and point features
-        x = torch.cat([global_feat, x], dim=2)
+        x = torch.cat([global_feat, point_feature], dim=1)
+#        print('concat size: {0}'.format(x.size()))
         # conv 1D LBRD 256
         x = self.lbrd1(x)
+#        print('lbrd1 size: {0}'.format(x.size()))
         x = self.lbr1(x)
+#        print('lbr1 size: {0}'.format(x.size()))
         x = self.linear_final(x)
+#        print('final size: {0}'.format(x.size()))
         # conv 1D LBR 256
         # conv 1D Linear Ns = 27 since k^3 is 27
 
@@ -220,6 +228,8 @@ if __name__ == "__main__":
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout rate')
     args = parser.parse_args()
-    test_sem = pct_semantic(args)
+    test_sem = pct_semantic(args).cuda()
+    x = torch.rand((1,3,2048), dtype=torch.float32).cuda()
+    test_sem.forward(x)
 
 

@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from data import ModelNet40
+from data import ModelNet40, ShapeNetPerm
 from model import Pct, pct_semantic
 import numpy as np
 from torch.utils.data import DataLoader
@@ -27,6 +27,8 @@ def _init_():
     os.system('cp data.py checkpoints' + '/' + args.exp_name + '/' + 'data.py.backup')
 
 def train(args, io):
+    device = torch.device("cuda" if args.cuda else "cpu")
+
     if args.pre_train == True:
         train_loader = DataLoader(ShapeNetPerm(partition='train', num_points=args.num_points), num_workers=8,
                              batch_size=args.batch_size, shuffle=True, drop_last=True)
@@ -40,7 +42,6 @@ def train(args, io):
                               batch_size=args.test_batch_size, shuffle=True, drop_last=False)
         model = pct(args.to(device))
 
-    device = torch.device("cuda" if args.cuda else "cpu")
     
 
     print(str(model))
@@ -55,7 +56,8 @@ def train(args, io):
 
     scheduler = CosineAnnealingLR(opt, args.epochs, eta_min=args.lr)
     
-    criterion = cal_loss
+#    criterion = cal_loss
+    criterion = nn.CrossEntropyLoss()
     best_test_acc = 0
 
     for epoch in range(args.epochs):
@@ -69,12 +71,17 @@ def train(args, io):
         total_time = 0.0
         for data, label in (train_loader):
             data, label = data.to(device), label.to(device).squeeze() 
+            print(data.size())
+            print(label.size())
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             opt.zero_grad()
 
             start_time = time.time()
             logits = model(data)
+            print(logits.size())
+            print(label.size())
+#            loss = criterion(logits, label, smoothing=(args.pre_train),pre_train = args.pre_train)
             loss = criterion(logits, label)
             loss.backward()
             opt.step()

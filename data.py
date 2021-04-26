@@ -40,15 +40,16 @@ def load_data_pre_train(partition):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.path.join(BASE_DIR, 'data')
     print('Loading Permuted data...')
-    glob_path = glob.glob(os.path.join(DATA_DIR, 'ShapeNet_Perm', '%s_data'%partition, '*','*.pts'))
-    all_data = np.empty((len(glob_path),2024, 3), dtype = 'float64')
+    glob_path = glob.glob(os.path.join(DATA_DIR, 'ShapeNet_Perm', '%s_data'%partition,'02691156' ,'*.pts'))
+    all_data = np.empty((len(glob_path),2024, 3), dtype = 'float32')
     all_label = np.empty((len(glob_path),2024), dtype = 'int64')
-    for index, class_folder in enumerate(glob.glob(os.path.join(DATA_DIR, 'ShapeNet_Perm', '%s_data'%partition, '*','*.pts'))):
+    #going to change '*' to 02691156 so that we can load data faster change back to '*' to load all data
+    for index, class_folder in enumerate(glob.glob(os.path.join(DATA_DIR, 'ShapeNet_Perm', '%s_data'%partition, '02691156','*.pts'))):
         point_name = os.path.basename(os.path.normpath(class_folder))
         point_base = point_name.split('.')[0]
         label_file = os.path.join(os.path.dirname(class_folder), '%s_label.txt'%point_base)
 
-        data = np.loadtxt(class_folder, dtype= 'float64')
+        data = np.loadtxt(class_folder, dtype= 'float32')
         label = np.loadtxt(label_file, dtype = 'int64')
         data_len = data.shape[0]
         if data_len < 2048:
