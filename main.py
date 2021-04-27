@@ -59,6 +59,7 @@ def train(args, io):
 #    criterion = cal_loss
     criterion = nn.CrossEntropyLoss()
     best_test_acc = 0
+    best_test_loss = 0
 
     for epoch in range(args.epochs):
         scheduler.step()
@@ -71,16 +72,16 @@ def train(args, io):
         total_time = 0.0
         for data, label in (train_loader):
             data, label = data.to(device), label.to(device).squeeze() 
-            print(data.size())
-            print(label.size())
+#            print(data.size())
+#            print(label.size())
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             opt.zero_grad()
 
             start_time = time.time()
             logits = model(data)
-            print(logits.size())
-            print(label.size())
+#            print(logits.size())
+#            print(label.size())
 #            loss = criterion(logits, label, smoothing=(args.pre_train),pre_train = args.pre_train)
             loss = criterion(logits, label)
             loss.backward()
@@ -100,10 +101,11 @@ def train(args, io):
         train_pred = np.concatenate(train_pred)
         outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f' % (epoch,
                                                                                 train_loss*1.0/count,
-                                                                                metrics.accuracy_score(
-                                                                                train_true, train_pred),
-                                                                                metrics.balanced_accuracy_score(
-                                                                                train_true, train_pred))
+                                                                                0., 0.)
+#                                                                                metrics.accuracy_score(
+#                                                                                train_true, train_pred),
+#                                                                                metrics.balanced_accuracy_score(
+#                                                                                train_true, train_pred))
         io.cprint(outstr)
 
         ####################
@@ -132,15 +134,20 @@ def train(args, io):
         print ('test total time is', total_time)
         test_true = np.concatenate(test_true)
         test_pred = np.concatenate(test_pred)
-        test_acc = metrics.accuracy_score(test_true, test_pred)
-        avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
+#        test_acc = metrics.accuracy_score(test_true, test_pred)
+#        avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
+        test_acc = 0. 
+        avg_per_class_acc = 0.
         outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f' % (epoch,
                                                                             test_loss*1.0/count,
                                                                             test_acc,
                                                                             avg_per_class_acc)
         io.cprint(outstr)
-        if test_acc >= best_test_acc:
-            best_test_acc = test_acc
+#        if test_acc >= best_test_acc:
+#            best_test_acc = test_acc
+#            torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
+        if test_loss <= best_test_loss:
+            best_test_loss = test_loss
             torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
 
 
