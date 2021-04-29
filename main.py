@@ -211,14 +211,14 @@ def train(args, io):
             if test_acc >= best_test_acc:
                 best_test_acc = test_acc
                 torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
-         else:
-             if test_loss <= best_test_loss:
-                 best_test_loss = test_loss
-                 print('Saving Checkpoint...')
-                 if args.cont:
-                     torch.save(model.state_dict(), 'checkpoints/%s/models/model1.t7' % args.exp_name)
-                 else:
-                     torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
+        else:
+            if test_loss <= best_test_loss:
+                best_test_loss = test_loss
+                print('Saving Checkpoint...')
+                if args.cont:
+                    torch.save(model.state_dict(), 'checkpoints/%s/models/model1.t7' % args.exp_name)
+                else:
+                    torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
 
 def test(args, io):
     test_loader = DataLoader(ModelNet40(partition='test', num_points=args.num_points),
