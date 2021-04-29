@@ -218,7 +218,7 @@ class Pct(nn.Module):
         return x
 
 class Pct_semantic(nn.Module):
-    def __init__(self, args, output_channels=40):
+    def __init__(self, args, output_channels=27):
         super(Pct_semantic, self).__init__()
         self.args = args
         self.conv1 = nn.Conv1d(3, 64, kernel_size=1, bias=False)
@@ -251,10 +251,10 @@ class Pct_semantic(nn.Module):
         # b, d, n
         x = F.relu(self.bn2(self.conv2(x)))
         x = x.permute(0, 2, 1)
-        new_xyz, new_feature = sample_and_group(npoint=2048, radius=0.15, nsample=32, xyz=xyz, points=x)         
+        new_xyz, new_feature = sample_and_group(npoint=2024, radius=0.15, nsample=32, xyz=xyz, points=x)         
         feature_0 = self.gather_local_0(new_feature)
         feature = feature_0.permute(0, 2, 1)
-        new_xyz, new_feature = sample_and_group(npoint=2048, radius=0.2, nsample=32, xyz=new_xyz, points=feature) 
+        new_xyz, new_feature = sample_and_group(npoint=2024, radius=0.2, nsample=32, xyz=new_xyz, points=feature) 
         feature_1 = self.gather_local_1(new_feature)
 
         x = self.pt_last(feature_1)
