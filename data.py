@@ -41,8 +41,8 @@ def load_data_pre_train(partition):
     DATA_DIR = os.path.join(BASE_DIR, 'data')
     print('Loading Permuted data...')
     glob_path = glob.glob(os.path.join(DATA_DIR, 'ShapeNet_Perm', '%s_data'%partition,'*' ,'*.pts'))
-    all_data = np.empty((len(glob_path),2024, 3), dtype = 'float32')
-    all_label = np.empty((len(glob_path),2024), dtype = 'int64')
+    all_data = np.empty((len(glob_path),2048, 3), dtype = 'float32')
+    all_label = np.empty((len(glob_path),2048), dtype = 'int64')
     #going to change '*' to 02691156 so that we can load data faster change back to '*' to load all data
     for index, class_folder in enumerate(glob.glob(os.path.join(DATA_DIR, 'ShapeNet_Perm', '%s_data'%partition, '*','*.pts'))):
         point_name = os.path.basename(os.path.normpath(class_folder))
