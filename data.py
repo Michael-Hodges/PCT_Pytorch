@@ -55,7 +55,7 @@ def load_data_pre_train(partition):
         if data_len < 2048:
             continue
         rng = np.random.default_rng()
-        index_sampled = rng.choice(data_len, size = 2024, replace = False)
+        index_sampled = rng.choice(data_len, size = 2048, replace = False)
         data = data[index_sampled,:]
         label = label[index_sampled]
         # shape: (number points, xyz)
