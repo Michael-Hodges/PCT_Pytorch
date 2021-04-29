@@ -3,6 +3,12 @@ This is a Pytorch implementation of PCT: Point Cloud Transformer.
 
 Paper link: https://arxiv.org/pdf/2012.09688.pdf
 
+## Changes made to the original repository
+Implemented the simple PCT version for classification and part segmentation
+Utilised simple PCT part segmentation network to pre train the network on self-supervised data generated using the method from this paper: https://papers.nips.cc/paper/2019/file/993edc98ca87f7e08494eec37fa836f7-Paper.pdf and implemented in this repository: https://github.com/Michael-Hodges/Self-Supervised_Point_Cloud
+
+Our pretrained model achieves accuracy of 90.56% and the non pretrained model achieves an accuracy of 88.69% showing that the pretraining helped improve our accuracy.
+
 ### Requirements
 python >= 3.7
 
