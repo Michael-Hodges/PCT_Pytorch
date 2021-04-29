@@ -73,9 +73,10 @@ def train(args, io):
         opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
     scheduler = CosineAnnealingLR(opt, args.epochs, eta_min=args.lr)
-    
-    criterion = cal_loss
-#    criterion = nn.CrossEntropyLoss()
+    if args.pre_train:
+        criterion = nn.CrossEntropyLoss()
+    else:
+        criterion = cal_loss
     best_test_acc = 0
     best_test_loss = 9999.
 
@@ -100,8 +101,10 @@ def train(args, io):
             logits = model(data)
 #            print(logits.size())
 #            print(label.size())
-            loss = criterion(logits, label, smoothing=(args.pre_train),pre_train = args.pre_train)
-#            loss = criterion(logits, label)
+            if args.pre_train:
+                loss = criterion(logits, label)
+            else:    
+                loss = criterion(logits, label, smoothing=(args.pre_train),pre_train = args.pre_train)
             loss.backward()
             opt.step()
             end_time = time.time()
@@ -117,14 +120,23 @@ def train(args, io):
         print ('train total time is',total_time)
         train_true = np.concatenate(train_true)
         train_pred = np.concatenate(train_pred)
-#        train_diff = train_true - train_pred
-#        correct = np.where(train_diff == 0)[0]
-#        print('correct shape: {0}'.format(correct.shape))
-#        print('total shape: {0}'.format(train_diff.shape))
-#        total_samples = train_diff.shape[0]*train_diff.shape[1]
-#        accuracy = correct.shape[0]/total_samples
+        if args.pre_train:
+            train_diff = train_true - train_pred
+            correct = np.where(train_diff == 0)[0]
+    #        print('correct shape: {0}'.format(correct.shape))
+    #        print('total shape: {0}'.format(train_diff.shape))
+            total_samples = train_diff.shape[0]*train_diff.shape[1]
+            accuracy = correct.shape[0]/total_samples
 
-        outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f' % (epoch,
+            outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f' % (epoch,
+                                                                                train_loss*1.0/count,
+                                                                                accuracy, 0.)
+#                                                                                metrics.accuracy_score(
+#                                                                                train_true, train_pred),
+#                                                                                metrics.balanced_accuracy_score(    
+#                                                                                train_true, train_pred))
+        else:
+            outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f' % (epoch,
                                                                                 train_loss*1.0/count,
 #                                                                                accuracy, 0.)
                                                                                 metrics.accuracy_score(
@@ -167,27 +179,46 @@ def train(args, io):
 #        total_samples_test = test_diff.shape[0]*test_diff.shape[1]
 #        accuracy_test = correct_test.shape[0]/total_samples_test
 
-        test_acc = metrics.accuracy_score(test_true, test_pred)
-        avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
 #        test_acc = 0. 
 #        test_acc = accuracy_test
 
 #        avg_per_class_acc = 0.
-        outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f' % (epoch,
+        if args.pre_train:
+            train_diff = train_true - train_pred
+            correct = np.where(train_diff == 0)[0]
+    #        print('correct shape: {0}'.format(correct.shape))
+    #        print('total shape: {0}'.format(train_diff.shape))
+            total_samples = train_diff.shape[0]*train_diff.shape[1]
+            accuracy = correct.shape[0]/total_samples
+
+            outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f' % (epoch,
+                                                                                train_loss*1.0/count,
+                                                                                accuracy, 0.)
+#                                                                                metrics.accuracy_score(
+#                                                                                train_true, train_pred),
+#                                                                                metrics.balanced_accuracy_score(    
+#                                                                                train_true, train_pred))
+        else:
+            
+            test_acc = metrics.accuracy_score(test_true, test_pred)
+            avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
+            outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f' % (epoch,
                                                                             test_loss*1.0/count,
                                                                             test_acc,
                                                                             avg_per_class_acc)
         io.cprint(outstr)
-        if test_acc >= best_test_acc:
-            best_test_acc = test_acc
-            torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
-#        if test_loss <= best_test_loss:
-#            best_test_loss = test_loss
-#            print('Saving Checkpoint...')
-#            if args.cont:
-#                torch.save(model.state_dict(), 'checkpoints/%s/models/model1.t7' % args.exp_name)
-#            else:
-#                torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
+        if args.pre_train:
+            if test_acc >= best_test_acc:
+                best_test_acc = test_acc
+                torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
+         else:
+             if test_loss <= best_test_loss:
+                 best_test_loss = test_loss
+                 print('Saving Checkpoint...')
+                 if args.cont:
+                     torch.save(model.state_dict(), 'checkpoints/%s/models/model1.t7' % args.exp_name)
+                 else:
+                     torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
 
 def test(args, io):
     test_loader = DataLoader(ModelNet40(partition='test', num_points=args.num_points),
