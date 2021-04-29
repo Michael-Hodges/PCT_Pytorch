@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import ModelNet40, ShapeNetPerm
-from model import Pct, pct_semantic
+from model import Pct, pct_semantic, pct_simple
 import numpy as np
 from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
@@ -30,9 +30,9 @@ def train(args, io):
     device = torch.device("cuda" if args.cuda else "cpu")
 
     if args.pre_train == True:
-        train_loader = DataLoader(ShapeNetPerm(partition='train', num_points=args.num_points), num_workers=8,
+        train_loader = DataLoader(ShapeNetPerm(partition='train', num_points=args.num_points), num_workers=1,
                              batch_size=args.batch_size, shuffle=True, drop_last=True)
-        test_loader = DataLoader(ShapeNetPerm(partition='test', num_points=args.num_points), num_workers=8,
+        test_loader = DataLoader(ShapeNetPerm(partition='test', num_points=args.num_points), num_workers=1,
                             batch_size=args.test_batch_size, shuffle=True, drop_last=False)
         model = pct_semantic(args).to(device)
     else:
@@ -40,12 +40,29 @@ def train(args, io):
                               batch_size=args.batch_size, shuffle=True, drop_last=True)
         test_loader = DataLoader(ModelNet40(partition='test', num_points=args.num_points), num_workers=8,
                               batch_size=args.test_batch_size, shuffle=True, drop_last=False)
-        model = pct(args.to(device))
+#        model = Pct(args).to(device)
+        model = pct_simple(args).to(device)
 
-    
 
     print(str(model))
     model = nn.DataParallel(model)
+
+    if args.cont:
+        model.load_state_dict(torch.load(args.model_path))
+
+    if args.load_pretrain:
+        print('loading pretrained model')
+        pretrain_model = pct_semantic(args).to(device)
+        pretrain_model = nn.DataParallel(pretrain_model)
+        pretrain_model.load_state_dict(torch.load(args.model_path))
+        pretrained_dict = pretrain_model.state_dict()
+        model_dict = model.state_dict()
+        #filter out unnecessary keys
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+        #overwrite entries in the existing state dict
+        model_dict.update(pretrained_dict) 
+        model.load_state_dict(model_dict, strict=True)
+        print('pretrained model loaded')
 
     if args.use_sgd:
         print("Use SGD")
@@ -56,10 +73,10 @@ def train(args, io):
 
     scheduler = CosineAnnealingLR(opt, args.epochs, eta_min=args.lr)
     
-#    criterion = cal_loss
-    criterion = nn.CrossEntropyLoss()
+    criterion = cal_loss
+#    criterion = nn.CrossEntropyLoss()
     best_test_acc = 0
-    best_test_loss = 0
+    best_test_loss = 9999.
 
     for epoch in range(args.epochs):
         scheduler.step()
@@ -82,8 +99,8 @@ def train(args, io):
             logits = model(data)
 #            print(logits.size())
 #            print(label.size())
-#            loss = criterion(logits, label, smoothing=(args.pre_train),pre_train = args.pre_train)
-            loss = criterion(logits, label)
+            loss = criterion(logits, label, smoothing=(args.pre_train),pre_train = args.pre_train)
+#            loss = criterion(logits, label)
             loss.backward()
             opt.step()
             end_time = time.time()
@@ -99,123 +116,16 @@ def train(args, io):
         print ('train total time is',total_time)
         train_true = np.concatenate(train_true)
         train_pred = np.concatenate(train_pred)
+#        train_diff = train_true - train_pred
+#        correct = np.where(train_diff == 0)[0]
+#        print('correct shape: {0}'.format(correct.shape))
+#        print('total shape: {0}'.format(train_diff.shape))
+#        total_samples = train_diff.shape[0]*train_diff.shape[1]
+#        accuracy = correct.shape[0]/total_samples
+
         outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f' % (epoch,
                                                                                 train_loss*1.0/count,
-                                                                                0., 0.)
-#                                                                                metrics.accuracy_score(
-#                                                                                train_true, train_pred),
-#                                                                                metrics.balanced_accuracy_score(
-#                                                                                train_true, train_pred))
-        io.cprint(outstr)
-
-        ####################
-        # Test
-        ####################
-        test_loss = 0.0
-        count = 0.0
-        model.eval()
-        test_pred = []
-        test_true = []
-        total_time = 0.0
-        for data, label in test_loader:
-            data, label = data.to(device), label.to(device).squeeze()
-            data = data.permute(0, 2, 1)
-            batch_size = data.size()[0]
-            start_time = time.time()
-            logits = model(data)
-            end_time = time.time()
-            total_time += (end_time - start_time)
-            loss = criterion(logits, label)
-            preds = logits.max(dim=1)[1]
-            count += batch_size
-            test_loss += loss.item() * batch_size
-            test_true.append(label.cpu().numpy())
-            test_pred.append(preds.detach().cpu().numpy())
-        print ('test total time is', total_time)
-        test_true = np.concatenate(test_true)
-        test_pred = np.concatenate(test_pred)
-#        test_acc = metrics.accuracy_score(test_true, test_pred)
-#        avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
-        test_acc = 0. 
-        avg_per_class_acc = 0.
-        outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f' % (epoch,
-                                                                            test_loss*1.0/count,
-                                                                            test_acc,
-                                                                            avg_per_class_acc)
-        io.cprint(outstr)
-#        if test_acc >= best_test_acc:
-#            best_test_acc = test_acc
-#            torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
-        if test_loss <= best_test_loss:
-            best_test_loss = test_loss
-            torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
-
-
-def pre_train(args, io):
-    if args.pre_train == True:
-        train_loader = DataLoader(ShapeNetPerm(partition='train', num_points=args.num_points), num_workers=8,
-                             batch_size=args.batch_size, shuffle=True, drop_last=True)
-        test_loader = DataLoader(ShapeNetPerm(partition='test', num_points=args.num_points), num_workers=8,
-                            batch_size=args.test_batch_size, shuffle=True, drop_last=False)
-    else:
-        train_loader = DataLoader(ModelNet40(partition='train', num_points=args.num_points), num_workers=8,
-                              batch_size=args.batch_size, shuffle=True, drop_last=True)
-        test_loader = DataLoader(ModelNet40(partition='test', num_points=args.num_points), num_workers=8,
-                              batch_size=args.test_batch_size, shuffle=True, drop_last=False)
-
-    device = torch.device("cuda" if args.cuda else "cpu")
-
-    model = Pct(args).to(device)
-    print(str(model))
-    model = nn.DataParallel(model)
-
-    if args.use_sgd:
-        print("Use SGD")
-        opt = optim.SGD(model.parameters(), lr=args.lr*100, momentum=args.momentum, weight_decay=5e-4)
-    else:
-        print("Use Adam")
-        opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-
-    scheduler = CosineAnnealingLR(opt, args.epochs, eta_min=args.lr)
-    
-    criterion = cal_loss
-    best_test_acc = 0
-
-    for epoch in range(args.epochs):
-        scheduler.step()
-        train_loss = 0.0
-        count = 0.0
-        model.train()
-        train_pred = []
-        train_true = []
-        idx = 0
-        total_time = 0.0
-        for data, label in (train_loader):
-            data, label = data.to(device), label.to(device).squeeze() 
-            data = data.permute(0, 2, 1)
-            batch_size = data.size()[0]
-            opt.zero_grad()
-
-            start_time = time.time()
-            logits = model(data)
-            loss = criterion(logits, label)
-            loss.backward()
-            opt.step()
-            end_time = time.time()
-            total_time += (end_time - start_time)
-            
-            preds = logits.max(dim=1)[1]
-            count += batch_size
-            train_loss += loss.item() * batch_size
-            train_true.append(label.cpu().numpy())
-            train_pred.append(preds.detach().cpu().numpy())
-            idx += 1
-            
-        print ('train total time is',total_time)
-        train_true = np.concatenate(train_true)
-        train_pred = np.concatenate(train_pred)
-        outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f' % (epoch,
-                                                                                train_loss*1.0/count,
+#                                                                                accuracy, 0.)
                                                                                 metrics.accuracy_score(
                                                                                 train_true, train_pred),
                                                                                 metrics.balanced_accuracy_score(
@@ -248,8 +158,20 @@ def pre_train(args, io):
         print ('test total time is', total_time)
         test_true = np.concatenate(test_true)
         test_pred = np.concatenate(test_pred)
+
+#        test_diff = test_true - test_pred
+#        correct_test = np.where(test_diff == 0)[0]
+#        print('correct shape: {0}'.format(correct.shape))
+#        print('total shape: {0}'.format(train_diff.shape))
+#        total_samples_test = test_diff.shape[0]*test_diff.shape[1]
+#        accuracy_test = correct_test.shape[0]/total_samples_test
+
         test_acc = metrics.accuracy_score(test_true, test_pred)
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
+#        test_acc = 0. 
+#        test_acc = accuracy_test
+
+#        avg_per_class_acc = 0.
         outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f' % (epoch,
                                                                             test_loss*1.0/count,
                                                                             test_acc,
@@ -258,14 +180,23 @@ def pre_train(args, io):
         if test_acc >= best_test_acc:
             best_test_acc = test_acc
             torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
+#        if test_loss <= best_test_loss:
+#            best_test_loss = test_loss
+#            print('Saving Checkpoint...')
+#            if args.cont:
+#                torch.save(model.state_dict(), 'checkpoints/%s/models/model1.t7' % args.exp_name)
+#            else:
+#                torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name)
 
 def test(args, io):
     test_loader = DataLoader(ModelNet40(partition='test', num_points=args.num_points),
                             batch_size=args.test_batch_size, shuffle=True, drop_last=False)
 
     device = torch.device("cuda" if args.cuda else "cpu")
-
-    model = Pct(args).to(device)
+    if args.model_sel == 'SPCT':
+        model = pct_simple(args).to(device)
+    else: 
+        model = Pct(args).to(device)
     model = nn.DataParallel(model) 
     
     model.load_state_dict(torch.load(args.model_path))
@@ -325,6 +256,12 @@ if __name__ == "__main__":
                         help='Pretrained model path')
     parser.add_argument('--pre_train', type=bool, default=False,
                          help='Perform pretraining')
+    parser.add_argument('--cont', type=bool, default=False,
+                         help='Continue pretraining by preloading model')
+    parser.add_argument('--load_pretrain', type=bool, default=False,
+                         help='load self-supervised model')
+    parser.add_argument('--model_sel', type=str, default='pct',
+                        help='choose pct or spct')
     args = parser.parse_args()
 
     _init_()

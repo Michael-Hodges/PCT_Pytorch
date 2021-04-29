@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python3.7 main.py --exp_name='load_and_train' --num_points=1024 --use_sgd=True --batch_size 32 --epochs 250 --lr 0.0001 --model_path='./checkpoints/pretrain/models/model1.t7' --load_pretrain=True

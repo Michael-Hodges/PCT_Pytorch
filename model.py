@@ -106,6 +106,65 @@ class pct_semantic(nn.Module):
 
         return x
 
+class pct_simple(nn.Module):
+    def __init__(self, args, output_channels=40):
+        super(pct_simple, self).__init__()
+        self.args = args
+        self.conv1 = nn.Conv1d(3, 128, kernel_size=1, bias=False)
+        self.conv2 = nn.Conv1d(128, 256, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.bn2 = nn.BatchNorm1d(256)
+        self.gather_local_0 = Local_op(in_channels=128, out_channels=128)
+        self.gather_local_1 = Local_op(in_channels=256, out_channels=256)
+
+        self.pt_last = Point_Transformer_Last(args,channels=256)
+
+        self.conv_fuse = nn.Sequential(nn.Conv1d(1280, 1024, kernel_size=1, bias=False),
+                                    nn.BatchNorm1d(1024),
+                                    nn.LeakyReLU(negative_slope=0.2))
+
+#        self.lbrd1 = nn.Sequential(nn.Conv1d(2048, 256, kernel_size=1, bias=False), 
+#                                    nn.BatchNorm1d(256),
+#                                    nn.LeakyReLU(negative_slope=0.2),
+#                                    nn.Dropout(p=0.5))
+#        self.lbr1 = nn.Sequential(nn.Conv1d(256, 256, kernel_size=1, bias=False),
+#                                    nn.BatchNorm1d(256),
+#                                    nn.LeakyReLU(negative_slope=0.2))
+#        self.linear_final = nn.Conv1d(256, output_channels,kernel_size=1, bias = False)
+        self.linear1 = nn.Linear(1024, 512, bias=False)
+        self.bn6 = nn.BatchNorm1d(512)
+        self.dp1 = nn.Dropout(p=args.dropout)
+        self.linear2 = nn.Linear(512, 256)
+        self.bn7 = nn.BatchNorm1d(256)
+        self.dp2 = nn.Dropout(p=args.dropout)
+        self.linear3 = nn.Linear(256, output_channels)
+
+    def forward(self, x):
+        xyz = x.permute(0, 2, 1)
+        batch_size, _, _ = x.size()
+        # b, d, n
+        x = F.relu(self.bn1(self.conv1(x)))
+        # b, d, n
+        x = F.relu(self.bn2(self.conv2(x)))
+        feature_1 = x
+
+        x = self.pt_last(feature_1)
+        x = torch.cat([x, feature_1], dim=1)
+        x = self.conv_fuse(x)
+        x = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)
+        x = F.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
+        x = self.dp1(x)
+        x = F.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
+        x = self.dp2(x)
+        x = self.linear3(x)
+
+#        x = F.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
+#        x = self.dp1(x)
+#        x = F.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
+#        x = self.dp2(x)
+#        x = self.linear3(x)
+
+        return x
 class Pct(nn.Module):
     def __init__(self, args, output_channels=40):
         super(Pct, self).__init__()
