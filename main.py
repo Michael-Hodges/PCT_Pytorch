@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import ModelNet40, ShapeNetPerm
-from model import Pct, pct_semantic, pct_simple
+from model import Pct, pct_semantic, pct_simple, Pct_semantic
 import numpy as np
 from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
@@ -34,7 +34,8 @@ def train(args, io):
                              batch_size=args.batch_size, shuffle=True, drop_last=True)
         test_loader = DataLoader(ShapeNetPerm(partition='test', num_points=args.num_points), num_workers=1,
                             batch_size=args.test_batch_size, shuffle=True, drop_last=False)
-        model = pct_semantic(args).to(device)
+#        model = pct_semantic(args).to(device)
+        model = Pct_semantic(args).to(device)
     else:
         train_loader = DataLoader(ModelNet40(partition='train', num_points=args.num_points), num_workers=8,
                               batch_size=args.batch_size, shuffle=True, drop_last=True)
